@@ -390,7 +390,7 @@ itoa (int value, char *result, int base)
         *ptr--= *ptr1;
         *ptr1++ = tmp_char;
     }
-    return result;
+    return strcat(result,"\0");
 }
 
 
@@ -451,42 +451,43 @@ int main(int argc, char **argv)
         
     while (true)
     {
-        char message[1024];
+        char message[10000];
         printf("Enter your message: ");
         scanf("%s", message);
-        char rem_message[1024];
-        char formed_message[10000];
+        char rem_message[10];
+        char formed_message[90000];
 
         do
         {
         strcpy(formed_message,stringToBinary(message));
         unsigned long msg = crctablefast((unsigned char *)message, strlen(message));
         char *temp;
-        temp =(char *)malloc(8192*sizeof(char *));
+        temp =(char *)malloc(90000*sizeof(char));
         temp = itoa(msg,temp,2);
-
         // printf("%s\n",temp);
-        
         i=0;
-        char *e;
-        e = (char *)malloc(8200*sizeof(char *));
+        char *remainder;
+        remainder = (char *)malloc(0*sizeof(char));
+        remainder = "";
         if(strlen(temp)<8){
             for(i=0;i<8-strlen(temp);i++){
-                strcat(e,"0");
+                strcat(remainder,"0");
             }
-            strcat(e,temp);
-            strcpy(rem_message,e);
+            strcat(remainder,temp);
+            strcat(remainder,"\0");
+            strcat(formed_message,remainder);
         }
         else
         {
-            strcpy(rem_message,temp);
+            strcpy(formed_message,temp);
+            strcat(formed_message,"\0");
         }
         free(temp);
-        free(e);
+        free(remainder);
 
         // printf("%s\n",formed_message);
         
-        strcat(formed_message,rem_message);
+        // strcat(formed_message,rem_message);
         //add error - flip bits randomly
         random_flip(formed_message,BER);
         }

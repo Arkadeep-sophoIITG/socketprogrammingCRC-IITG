@@ -8,3 +8,5 @@ finalclient: finalclient.c
 
 finalclean:
 	rm -f finalclient finalserver
+
+allover: finalclean finalall
