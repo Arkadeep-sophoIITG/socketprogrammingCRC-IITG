@@ -14,13 +14,12 @@
 #include <zconf.h>
 
 
-#define FAIL -1
-#define SUCCESS 1
 #define ACK "ACK"
 #define NACK "NACK"
 
-// global so we can close them from the signal handler
-int server_socket, client_socket;
+
+
+int socket_server, socket_client;
 
 
 typedef struct packet{
@@ -37,7 +36,7 @@ typedef struct frame{
 void error(char *msg)
 {
     perror(msg);
-    exit(0);
+    exit(0);    
 }
 
 
@@ -180,9 +179,6 @@ char *stringToBinary(char *s)
 
 
 
-
-
-
 /* Iterative Function to calculate (x^y) in O(logy) */
 
 float exponent(float x, int y)
@@ -250,16 +246,16 @@ char *construct_message(char *message,char *temp,int data_len)
     return temp;
 }
 
-void process(int client_socket, float drop_probability,float ber)
+void process(int socket_client, float drop_probability,float ber)
 {
-    int data_len;
+    int data_len = 1;
     char *temp_ack,*temp_nack,*final_ack,*final_nack;
 
     do
     {
         char message[10000];
         // receive from the socket
-        data_len = read(client_socket, message, 10000);
+        data_len = read(socket_client, message, 10000);
         message[data_len] = '\0';
         
         // printf("%s\n",message);
@@ -276,12 +272,12 @@ void process(int client_socket, float drop_probability,float ber)
         // if crc is check is true, we have the correct data and we send ack else we send nack
         if (data_len && msg ==0)
         {
-        	printf("Message received:  %s\n",temp);
-            printf("Sending ACK....");
+        	printf("Message received by server:  %s\n",temp);
+            printf("Sending ACK to sender....");
             srand(time(0));
             if (((float)rand() / RAND_MAX) < drop_probability)
             {
-                printf("Packet dropped!\n");
+                printf("Packet has been dropped!\n");
                 continue;
             }
             temp_ack =(char *)malloc(64*sizeof(char));
@@ -292,15 +288,15 @@ void process(int client_socket, float drop_probability,float ber)
             memset(final_ack,0x00,64); 
             final_ack = construct_message(temp_ack,final_ack,strlen(temp_ack));
             // send to the socket
-            int sent = send(client_socket, final_ack, strlen(final_ack), 0);
+            int sent = send(socket_client, final_ack, strlen(final_ack), 0);
             printf("Sent successfully!\n");
             free(temp_ack);
             free(final_ack);
         }
         else if (data_len)
         {
-           	printf("Message received:  %s\n",temp);
-            printf("Message retrieved had some errors, sending NACK....");
+           	printf("Message received by server:  %s\n",temp);
+            printf("Message retrieved had some errors, sending NACK to sender....");
             srand(time(0));
             if (((float)rand() / RAND_MAX) < drop_probability)
             {
@@ -316,14 +312,14 @@ void process(int client_socket, float drop_probability,float ber)
             memset(final_nack,0x00,64); 
             final_nack = construct_message(temp_nack,final_nack,strlen(temp_nack));
             // send to the socket
-            int sent = send(client_socket, final_nack, strlen(final_nack), 0);
+            int sent = send(socket_client, final_nack, strlen(final_nack), 0);
             printf("Sent successfully!\n");
             free(temp_nack);
             free(final_nack);
         }
         else
         {
-            close(client_socket);
+            close(socket_client);
         }
         free(temp);
     } while (data_len); // continue till we get proper data from the socket
@@ -332,12 +328,12 @@ void process(int client_socket, float drop_probability,float ber)
 int setup_connection(int port)
 {
     // create a new socket witch AF_INET for internet domain, stream socket option, TCP(given by os) - reliable, connection oriented
-    if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    if ((socket_server = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
-        perror("socket: ");
-        return -1;
+        error("Still creating socket ...");
     }
-    printf("Created socket...\n");
+
+    printf("Created socket finally...\n");
 
     struct sockaddr_in server;
     server.sin_family = AF_INET;
@@ -346,41 +342,37 @@ int setup_connection(int port)
     bzero(&server.sin_zero, 8); // clears the buffer
 
     // bind function binds the socket to the address and port number specified in addr
-    if ((bind(server_socket, (struct sockaddr *)&server, sizeof(struct sockaddr_in)) < 0))
+    if ((bind(socket_server, (struct sockaddr *)&server, sizeof(struct sockaddr_in)) < 0))
     {
-        perror("binding: ");
-        return -1;
+        error("Still binding ...");
     }
     printf("Done with binding...\n");
 
     // put the server socket in a passive mode, where it waits for the client to approach the server to make a connection
     // 5 defines the maximum length to which the queue of pending connections for sockfd may grow
     // if a connection request arrives when the queue is full, the client may receive an error
-    if ((listen(server_socket, 5)) < 0)
+    if ((listen(socket_server, 5)) < 0)
     {
-        perror("listening: ");
-        return -1;
+        error("Still listening...");
     }
     printf("Listening...\n");
     return 1;
 }
 
-void signal_callback(int signum)
+void signal_callback(int inthand)
 {
-    printf("Caught signal %d. Releasing resources...\n", signum);
-    close(client_socket);
-    close(server_socket);
-    exit(signum);
+    printf("Signal received %d. Releasing all resources...\n", inthand);
+    close(socket_client);
+    close(socket_server);
+    exit(inthand);
 }
-
-
 
 
 int main(int argc, char **argv)
 {
     if (argc != 2)
     {
-        fprintf(stderr, "Usage: ./server port\n");
+        fprintf(stderr, "Usage should be the following : ./server port\n");
         return EXIT_FAILURE;
     }
 
@@ -393,10 +385,7 @@ int main(int argc, char **argv)
     printf("Enter BER (probability of bit errors): ");
     scanf("%f", &BER);
 
-    if (setup_connection(atoi(argv[1])) == -1)
-    {
-        return EXIT_FAILURE;
-    }
+    setup_connection(atoi(argv[1]));
       // at first, compute constant bit masks for whole CRC and CRC high bit
     int i;
     unsigned long bit, crc;
@@ -406,58 +395,45 @@ int main(int argc, char **argv)
 
     generate_crc_table();
 
-    if (!direct) {
 
-        crcinit_nondirect = crcinit;
-        crc = crcinit;
-        for (i=0; i<order; i++) {
+    crcinit_direct = crcinit;
+    crc = crcinit;
+    for (i=0; i<order; i++) {
 
-            bit = crc & crchighbit;
-            crc<<= 1;
-            if (bit) crc^= polynom;
-        }
-        crc&= crcmask;
-        crcinit_direct = crc;
+        bit = crc & 1;
+        if (bit) crc^= polynom;
+        crc >>= 1;
+        if (bit) crc|= crchighbit;
     }
+    crcinit_nondirect = crc;
 
-    else {
 
-        crcinit_direct = crcinit;
-        crc = crcinit;
-        for (i=0; i<order; i++) {
-
-            bit = crc & 1;
-            if (bit) crc^= polynom;
-            crc >>= 1;
-            if (bit) crc|= crchighbit;
-        }   
-        crcinit_nondirect = crc;
-    }
-
-    while (1)
+    while (true)
     {
         struct sockaddr_in client;
         unsigned int len;
+        int process_id;
 
         // extract the first connection request on the queue of pending connections for the listening socket
         // creates a new connected socket, and returns a new file descriptor referring to that socket
         // connection is established between client and server, and they are ready to transfer data
-        if ((client_socket = accept(server_socket, (struct sockaddr *)&client, &len)) < 0)
+        if ((socket_client = accept(socket_server, (struct sockaddr *)&client, &len)) < 0)
         {
             error("Accepting connection ...");
         }
         printf("Accepted...\n");
-
-        int pid;
-        if ((pid = fork()) < 0)
+        process_id = fork();
+        
+        if (process_id < 0)
         {
-            error("Forking...");
+            error ("Still forking ...");
         }
-        if (pid == 0)
+
+        if (process_id == 0)
         {
             // child process closes the old socket and works with the new one
-            close(server_socket);
-            process(client_socket, drop_probability,BER);
+            close(socket_server);
+            process(socket_client, drop_probability,BER);
             printf("Client served... Server can be terminated now!\n");
 
             // after working with the new socket, it simply exits
@@ -467,7 +443,7 @@ int main(int argc, char **argv)
         {
             // parent process does not need new socket, so it closes it
             // and keeps listening on old socket
-            close(client_socket);
+            close(socket_client);
         }
     }
 }
